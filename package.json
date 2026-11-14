@@ -1,0 +1,21 @@
+{
+  "name": "restful-booker-api-tests",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Chained Postman API test suite for the Restful Booker live API",
+  "license": "MIT",
+  "author": "Chelbeez",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "postman collection run postman/RestfulBooker.postman_collection.json -e postman/RestfulBooker.postman_environment.json --timeout-request 30000 --output reports",
+    "test:smoke": "postman collection run postman/RestfulBooker.postman_collection.json -e postman/RestfulBooker.postman_environment.json -i \"00 - Smoke\" --timeout-request 30000",
+    "reports:redact": "node scripts/redact-reports.mjs",
+    "security:scan": "node scripts/secret-scan.mjs",
+    "verify": "npm run security:scan && npm test"
+  },
+  "devDependencies": {
+    "postman-cli": "1.90.0"
+  }
+}

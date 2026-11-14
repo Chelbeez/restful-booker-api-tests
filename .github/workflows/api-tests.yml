@@ -1,0 +1,58 @@
+name: API tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: api-tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postman-collection:
+    name: Postman collection
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Scan for committed secrets
+        run: npm run security:scan
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=high
+
+      - name: Run API test suite
+        run: npm test
+
+      - name: Delete raw execution reports
+        if: always()
+        run: npm run reports:redact
+
+      - name: Upload sanitized run summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: postman-run-summary
+          path: reports/*.collection-run-summary.yaml
+          if-no-files-found: warn
+          retention-days: 14
