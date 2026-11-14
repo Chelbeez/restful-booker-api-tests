@@ -77,7 +77,7 @@ The collection executes **12 requests and 65 assertions**.
 
 ### Prerequisites
 
-- Node.js 18 or newer
+- Node.js 20 or newer (Node 24 LTS recommended)
 - npm
 - No Postman account is required for local Postman CLI runs
 

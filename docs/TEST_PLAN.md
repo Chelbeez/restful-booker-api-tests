@@ -167,7 +167,7 @@ Current suite size: **12 requests, 65 assertions** (12 collection-level liveness
 
 - Target API is reachable over HTTPS.
 - Public sandbox credentials are valid.
-- Node.js 18+ and npm are available.
+- Node.js 20+ and npm are available.
 - Environment file is imported/selected.
 - Collection is run in order.
 

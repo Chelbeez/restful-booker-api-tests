@@ -6,7 +6,7 @@
   "license": "MIT",
   "author": "Chelbeez",
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "scripts": {
     "test": "postman collection run postman/RestfulBooker.postman_collection.json -e postman/RestfulBooker.postman_environment.json --timeout-request 30000 --output reports",
