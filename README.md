@@ -205,6 +205,7 @@ It installs from the lockfile, runs the secret scan, audits dependencies, execut
 ## Documentation
 
 - [docs/TEST_PLAN.md](docs/TEST_PLAN.md) — scope, risks, scenarios, traceability, entry/exit criteria, and reporting.
+- [docs/QA_ASSESSMENT_TEST_DOCUMENT.md](docs/QA_ASSESSMENT_TEST_DOCUMENT.md) / [.docx](docs/QA_Assessment_Test_Document.docx) — complete assessment document with test strategy, web test cases, API test cases, evidence, and bug reports.
 - [docs/API_TEST_REPORT.md](docs/API_TEST_REPORT.md) — per-endpoint request/response details, analysis, and negative scenarios.
 - [docs/BUG_REPORTS.md](docs/BUG_REPORTS.md) — formal defect reports with reproduction steps, expected vs actual results, and evidence.
 - [docs/evidence/defect-probe.log](docs/evidence/defect-probe.log) — sanitized HTTP transcript from the defect probe.
