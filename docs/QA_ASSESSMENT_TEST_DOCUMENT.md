@@ -46,6 +46,69 @@ It demonstrates:
 - cleanup verification with a final `404`;
 - sanitized reporting and CI execution.
 
+### 1.1.1 Criterion mapping — API Testing (Postman)
+
+| Criterion | How the Postman collection demonstrates it | Evidence |
+| --- | --- | --- |
+| Stateful data workflows | The collection is an ordered 15-request journey. Auth creates a token, create creates a booking, update uses both, independent reads verify persistence, negative requests test state safety, and delete plus a final `404` complete the lifecycle. | Collection folders `01 - Chained happy path`, `02 - Negative and security`, `03 - Cleanup`; API-01 to API-15 |
+| Dynamic variable chaining across requests | `token` is extracted from the `POST /auth` response and stored as a collection variable. `bookingid` is extracted from `POST /booking` and stored as `bookingId`. Downstream requests use `{{token}}` in the `Cookie` header and `{{bookingId}}` in the URL. Stale values are cleared before a new run. | Collection test scripts; Sections 4.3–4.7 |
+| Robust assertions — status codes | Each request asserts its expected status: `200`, `201`, `400`, `403`, or `404`. | 77 assertions; Section 4.1 |
+| Robust assertions — JSON schemas | Auth-token, booking, create-booking, and bad-credentials responses are validated against JSON Schemas. | Collection test scripts; Sections 4.3–4.6 |
+| Robust assertions — payload data | Every submitted booking field is compared with the response value. Specific business fields, state transition, independent read-after-write, and sentinel absence are also asserted. | Sections 4.4–4.6; BUG-03 to BUG-05 evidence |
+
+### 1.1.2 Postman implementation pattern
+
+The collection uses Postman **collection variables** and **test scripts**, not hard-coded values. The essential pattern is:
+
+```javascript
+// POST /auth — test script
+const auth = pm.response.json();
+pm.collectionVariables.set("token", auth.token);
+
+pm.test("Status code is 200", function () {
+  pm.response.to.have.status(200);
+});
+
+pm.test("Response matches the auth-token JSON schema", function () {
+  pm.response.to.have.jsonSchema(authSchema);
+});
+
+pm.test("Token is present and non-empty", function () {
+  pm.expect(auth.token).to.be.a("string").and.not.empty;
+});
+```
+
+```javascript
+// POST /booking — test script
+const created = pm.response.json();
+pm.collectionVariables.set("bookingId", created.bookingid);
+
+pm.test("bookingid is a positive integer", function () {
+  pm.expect(created.bookingid).to.be.a("number").and.above(0);
+});
+
+pm.test("Created booking contains every submitted field", function () {
+  Object.keys(expected).forEach(function (key) {
+    pm.expect(created.booking[key]).to.eql(expected[key]);
+  });
+});
+```
+
+```text
+# PUT /booking/:id — chained request definition
+URL:    {{baseUrl}}/booking/{{bookingId}}
+Header: Cookie: token={{token}}
+Body:   the update payload, generated per run
+```
+
+### 1.1.3 Why the workflow is genuinely stateful
+
+- `POST /booking` is not tested in isolation; its `bookingid` becomes the URL of the update, read, and delete requests.
+- The `PUT` response is not trusted on its own; a separate `GET` re-reads the record and compares it with the payload that was sent.
+- Two unauthorized `PUT` requests and one unauthorized `DELETE` use a sentinel payload/record, then a follow-up `GET` proves the sentinel was never persisted and the record still exists.
+- Cleanup is verified by a final `GET` that must return `404`.
+- Auth and create clear stale variables first, so a failed run cannot accidentally mutate a booking from an earlier run.
+
 ### 1.2 Defects found
 
 Seven defects were reproduced with HTTP transcripts:
@@ -1140,6 +1203,11 @@ npm run test:smoke
 
 | Requirement | Where it is covered | Evidence |
 | --- | --- | --- |
+| **Criterion: stateful data workflows** | Sections 1.1.1, 1.1.3, 4.1 | Ordered auth → create → update → verify → negative → delete → verify `404`; read-after-write and read-after-rejection |
+| **Criterion: dynamic variable chaining across requests** | Sections 1.1.1, 1.1.2, 4.3–4.7 | `token` extracted from auth; `bookingId` extracted from create; `{{token}}` and `{{bookingId}}` used downstream |
+| **Criterion: robust status-code assertions** | Sections 1.1.1, 4.1 | `200`, `201`, `400`, `403`, `404` checks |
+| **Criterion: robust JSON Schema assertions** | Sections 1.1.1, 4.3–4.6 | Auth-token, booking, create-booking, bad-credentials schemas |
+| **Criterion: robust payload assertions** | Sections 1.1.1, 4.4–4.6 | Field-by-field payload comparison, business values, state transition, independent read |
 | Test strategy | Section 2 | Scope, approach, risks, entry/exit criteria |
 | Web test cases | Section 3 | WEB-01 to WEB-14, each with steps and expected result |
 | API test cases | Section 4 | Per-endpoint request/response/assertions/analysis |

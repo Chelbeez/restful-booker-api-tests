@@ -20,9 +20,9 @@ The suite covers a full auth → create → update → verify → delete workflo
 
 ## Assessment alignment
 
-- **Chained flow:** auth → create → update → verify → delete, executed in one ordered collection.
-- **Dynamic variable chaining:** `token` and `bookingid` are extracted from responses and injected into downstream URLs/headers.
-- **Robust assertions:** status codes, content types, JSON Schema, field-by-field payload equality, specific business fields, and persisted-state checks.
+- **Stateful data workflow:** auth → create → update → verify → negative checks → delete → verify `404`, executed in one ordered collection.
+- **Dynamic variable chaining across requests:** `token` and `bookingid` are extracted from responses, stored as collection variables, and injected into downstream URLs/headers.
+- **Robust assertions:** status codes (`200`, `201`, `400`, `403`, `404`), JSON Schemas, field-by-field payload equality, specific business fields, state transition, and persisted-state checks.
 - **Negative testing:** `PUT` without a token and with an invalid token, unauthenticated `DELETE`, invalid credentials, malformed JSON, unknown resource, and a read-after-rejection integrity check.
 - **Cleanup:** the created booking is deleted and a follow-up `GET` confirms `404`.
 - **Per-endpoint reporting:** request details, response details, analysis, and negative scenarios in [docs/API_TEST_REPORT.md](docs/API_TEST_REPORT.md).
