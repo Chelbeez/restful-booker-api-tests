@@ -9,6 +9,7 @@ reports/*
 .DS_Store
 Thumbs.db
 *.log
+!docs/evidence/defect-probe.log
 *.tmp
 *.swp
 .vscode/

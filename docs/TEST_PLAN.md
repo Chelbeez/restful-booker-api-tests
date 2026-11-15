@@ -32,9 +32,12 @@ The suite demonstrates dynamic variable chaining, contract and payload assertion
 - Independent read-after-write verification of every updated field.
 - Unauthorized update attempts (missing token and invalid token).
 - Invalid credentials behavior.
+- Malformed JSON handling for auth and create.
 - Unknown-resource behavior.
-- State integrity after rejected writes.
+- State integrity after rejected writes and deletes.
+- Unauthenticated `DELETE`.
 - Deletion and deletion confirmation.
+- Per-endpoint reporting and formal defect reproduction.
 - Runtime cleanup of token and test data.
 - JSON Schema and exact-payload assertions.
 - CI execution, secret scanning, and dependency auditing.
@@ -48,6 +51,7 @@ The suite demonstrates dynamic variable chaining, contract and payload assertion
 - List/filter endpoints (`GET /booking` with query parameters).
 - Testing the API documentation site itself.
 - Testing non-REST integrations or third-party dependencies.
+- Fixing or patching the vendor API; defects are documented and reproduced, not repaired.
 
 ## 4. Risk assessment
 
@@ -55,11 +59,13 @@ The suite demonstrates dynamic variable chaining, contract and payload assertion
 | --- | --- | --- | --- |
 | Unauthorized write is accepted | Critical | Medium | Two negative `PUT` tests plus a read-after-rejection state-integrity check. |
 | Dynamic chaining passes the wrong id/token | High | Medium | Extract values from responses; assert id is a positive integer; use the extracted id in every downstream URL. |
-| Update appears successful but is not persisted | High | Medium | Independent `GET` after `PUT` with exact deep equality. |
+| Update appears successful but is not persisted | High | Medium | Independent `GET` after `PUT` with field-by-field equality. |
 | Test data pollutes the shared sandbox | High | Medium | Unique run suffix, future dates, `DELETE`, and `404` confirmation. Note: cleanup is best-effort if the API is unavailable. |
 | Token or credentials leak through logs/artifacts | High | Medium | Ephemeral token, no console logging, HTTPS guard, raw report redaction, only sanitized summary uploaded. |
 | Contract drift breaks consumers silently | Medium | Medium | JSON Schema assertions for auth, booking, create, and bad-credentials responses. |
-| Additive API changes cause false failures | Medium | Medium | Schemas require critical fields/types but allow additional properties. |
+| Invalid input creates corrupt data | High | High | Negative probes for missing fields, wrong types, negative prices, and invalid dates; confirmed defects documented in `BUG_REPORTS.md`. |
+| Error responses use misleading status codes | Medium | High | Negative tests assert observed status codes; mismatches with REST semantics are raised as defects. |
+| Additive API changes cause false failures | Medium | Medium | Schemas and payload comparisons require critical fields/types but allow additional properties. |
 | Shared live API is noisy or slow | Medium | High | Unique data, generous 30-second liveness guard, CI schedule to surface drift. |
 | Heroku cold start causes a flaky failure | Medium | Medium | 30-second request timeout and a 30-second liveness assertion; no tight performance SLO. |
 | Stale state from a failed prior run is reused | High | Low | Auth clears the old token; create clears the old `bookingId` before creating a new record. |
@@ -85,7 +91,7 @@ Each JSON response is checked against a JSON Schema that validates:
 - ISO date shape (`YYYY-MM-DD`)
 - expected bad-credentials reason
 
-Schemas intentionally allow additive properties to avoid brittle failures when the sandbox adds fields.
+Schemas intentionally allow additive properties to avoid brittle failures when the sandbox adds fields. Payload comparisons follow the same rule: every field submitted by the test must be echoed correctly, while extra response fields are tolerated.
 
 ### 5.3 Negative and security testing
 
@@ -94,10 +100,15 @@ Schemas intentionally allow additive properties to avoid brittle failures when t
 | NEG-01 | `PUT /booking/:id` with no token | `403 Forbidden`; sentinel payload not persisted |
 | NEG-02 | `PUT /booking/:id` with an invalid token | `403 Forbidden`; sentinel payload not persisted |
 | NEG-03 | `POST /auth` with a wrong password | `200` + `reason: Bad credentials`; no `token` property |
-| NEG-04 | `GET /booking/999999999` | `404 Not Found` |
-| NEG-05 | `GET /booking/:id` after NEG-01/NEG-02 | still equals the last authorized update; sentinel absent |
+| NEG-04 | `POST /auth` with malformed JSON | `400 Bad Request`, `text/plain` |
+| NEG-05 | `POST /booking` with malformed JSON | `400 Bad Request`, `text/plain` |
+| NEG-06 | `GET /booking/999999999` | `404 Not Found` |
+| NEG-07 | `DELETE /booking/:id` with no token | `403 Forbidden`; record still exists |
+| NEG-08 | `GET /booking/:id` after rejected writes/deletes | still equals the last authorized update; sentinel absent |
 
 The negative payload uses a distinct marker (`QA_SHOULD_NOT_PERSIST_<suffix>`, price `999`, additional need `Unauthorized change`). This makes an authorization bypass detectable even if the API returns a success-looking response.
+
+Invalid-input cases that the API does not handle correctly are not asserted as desired behavior in CI. They are reproduced by `npm run probe:defects` and documented in [BUG_REPORTS.md](BUG_REPORTS.md): missing/`null` fields (`500`), non-numeric price (coerced to `null`), negative price (accepted), invalid dates (`0NaN-aN-aN`), unknown delete (`405`), and repeated delete (`405`).
 
 ### 5.4 Cleanup
 
@@ -105,6 +116,7 @@ The negative payload uses a distinct marker (`QA_SHOULD_NOT_PERSIST_<suffix>`, p
 - A follow-up `GET` must return `404 Not Found`.
 - Runtime variables (`token`, `bookingId`, payload expectations) are unset.
 - The suite is safe to re-run; a new unique booking is created each time.
+- The defect probe also deletes every booking it creates and reports any cleanup failure as a non-zero exit code.
 
 ### 5.5 Test data
 
@@ -120,16 +132,19 @@ The negative payload uses a distinct marker (`QA_SHOULD_NOT_PERSIST_<suffix>`, p
 | --- | --- | --- | --- | --- |
 | TC-01 | Service health | `GET /ping` | `201`, text body, content type | Environment readiness |
 | TC-02 | Generate auth token | `POST /auth` | `200`, schema, non-empty token, token stored | Auth |
-| TC-03 | Create booking and extract id | `POST /booking` | `200`, schema, positive integer id, exact payload, id stored | Create + dynamic extraction |
+| TC-03 | Create booking and extract id | `POST /booking` | `200`, schema, positive integer id, submitted fields echoed, id stored | Create + dynamic extraction |
 | TC-04 | Update booking | `PUT /booking/:id` | `200`, schema, exact update payload, changed from original | Update with extracted id + token |
 | TC-05 | Verify update | `GET /booking/:id` | `200`, schema, exact updated payload, original values gone | Verify |
 | TC-06 | Update without token | `PUT /booking/:id` | `403`, `Forbidden` | Negative testing |
 | TC-07 | Update with invalid token | `PUT /booking/:id` | `403`, `Forbidden` | Negative/security testing |
 | TC-08 | Invalid credentials | `POST /auth` | `200`, `reason: Bad credentials`, no token | Negative auth |
-| TC-09 | Unknown booking | `GET /booking/999999999` | `404`, `Not Found` | Error handling |
-| TC-10 | Rejected writes do not mutate data | `GET /booking/:id` | exact authorized state retained; sentinel absent | State integrity |
-| TC-11 | Delete booking | `DELETE /booking/:id` | `201`, body `Created` | Cleanup |
-| TC-12 | Confirm deletion and clear runtime state | `GET /booking/:id` | `404`, variables unset | Cleanup + security |
+| TC-09 | Malformed auth JSON | `POST /auth` | `400`, `Bad Request` | Negative input parsing |
+| TC-10 | Malformed booking JSON | `POST /booking` | `400`, `Bad Request` | Negative input parsing |
+| TC-11 | Unknown booking | `GET /booking/999999999` | `404`, `Not Found` | Error handling |
+| TC-12 | Unauthenticated delete | `DELETE /booking/:id` | `403`, `Forbidden`; record survives | Negative authorization |
+| TC-13 | Rejected writes/deletes do not mutate data | `GET /booking/:id` | authorized state retained; sentinel absent | State integrity |
+| TC-14 | Delete booking | `DELETE /booking/:id` | `201`, body `Created` | Cleanup |
+| TC-15 | Confirm deletion and clear runtime state | `GET /booking/:id` | `404`, variables unset | Cleanup + security |
 
 ## 7. Assertion coverage
 
@@ -138,7 +153,7 @@ The negative payload uses a distinct marker (`QA_SHOULD_NOT_PERSIST_<suffix>`, p
 | Status code | `200`, `201`, `403`, `404` |
 | Headers | `Content-Type: application/json` or `text/plain` |
 | JSON Schema | Auth token, booking, create-booking, bad-credentials |
-| Exact payload | Deep equality between sent and returned booking |
+| Payload equality | Every submitted field matches the returned value; additive fields tolerated |
 | Specific data points | firstname, lastname, totalprice, depositpaid, checkin, checkout, additionalneeds |
 | State transition | updated values differ from original |
 | Independent read | fresh `GET` returns the updated record |
@@ -148,7 +163,7 @@ The negative payload uses a distinct marker (`QA_SHOULD_NOT_PERSIST_<suffix>`, p
 | Runtime hygiene | token and booking variables unset |
 | Liveness | each response under a generous 30-second guard |
 
-Current suite size: **12 requests, 65 assertions** (12 collection-level liveness checks plus 53 request-level checks).
+Current suite size: **15 requests, 77 assertions** (15 collection-level liveness checks plus 62 request-level checks).
 
 ## 8. Security controls
 
@@ -173,9 +188,10 @@ Current suite size: **12 requests, 65 assertions** (12 collection-level liveness
 
 ## 10. Exit criteria
 
-- All 12 requests execute.
-- All assertions pass.
+- All 15 requests execute.
+- All 77 assertions pass.
 - The booking is deleted and a follow-up `GET` returns `404`.
+- The defect probe completes and cleans up all bookings it created.
 - No token, password, or raw request/response report is committed or uploaded.
 - Secret scan and dependency audit pass.
 
@@ -196,6 +212,14 @@ npm run verify
 npm run test:smoke
 ```
 
+To reproduce the documented vendor defects without affecting the regression suite:
+
+```bash
+npm run probe:defects
+```
+
+The probe is intentionally excluded from CI: known vendor defects must not make a green regression build red. It creates and removes its own bookings and never prints auth tokens.
+
 ### CI
 
 GitHub Actions runs on push, pull request, manual dispatch, and a weekly schedule. The job:
@@ -213,16 +237,21 @@ GitHub Actions runs on push, pull request, manual dispatch, and a weekly schedul
 - The sanitized summary YAML contains run counts, timings, and failure messages.
 - Raw execution YAML is deleted because it can contain auth headers, request bodies, and response bodies.
 - CI retains the sanitized summary for 14 days.
+- Per-endpoint evidence is in [API_TEST_REPORT.md](API_TEST_REPORT.md); formal defects are in [BUG_REPORTS.md](BUG_REPORTS.md); the sanitized HTTP transcript is in [evidence/defect-probe.log](evidence/defect-probe.log).
 
 ## 13. Known API behaviors and maintenance notes
 
 | Behavior | Observed response | Why it matters |
 | --- | --- | --- |
 | Health check | `201 Created`, `text/plain` body `Created` | Do not assume a conventional `200` health response. |
-| Invalid credentials | `200 OK` with `{"reason":"Bad credentials"}` | The test documents the quirk and asserts no token is issued. |
-| Unauthorized update | `403 Forbidden`, `text/plain` | Negative assertions must not assume JSON. |
+| Invalid credentials | `200 OK` with `{"reason":"Bad credentials"}` | The test documents the quirk and asserts no token is issued. Status semantics are raised in BUG-01. |
+| Missing/null create fields | `500 Internal Server Error` | Documented in BUG-02; validation is a confirmed defect. |
+| Wrong type / negative price | `200 OK`, value coerced to `null` or stored negative | Documented in BUG-03 and BUG-04. |
+| Invalid dates | `200 OK`, dates become `"0NaN-aN-aN"` | Documented in BUG-05. |
+| Unauthorized update/delete | `403 Forbidden`, `text/plain` | Negative assertions must not assume JSON. |
 | Delete | `201 Created`, body `Created` | Do not assert `204 No Content`. |
-| Delete again | `405 Method Not Allowed` | The suite avoids double-delete assertions; it verifies deletion with `GET`. |
+| Unknown delete | `405 Method Not Allowed` | Should be `404`; documented in BUG-06. |
+| Delete again | `405 Method Not Allowed` | Non-idempotent; documented in BUG-07. The suite verifies deletion with `GET`. |
 
 If the API changes status codes, response shapes, or auth behavior, update the collection assertions and this test plan together. Keep the schemas forward-compatible unless a breaking contract change is intentional.
 
@@ -233,3 +262,5 @@ If the API changes status codes, response shapes, or auth behavior, update the c
 - The liveness guard is not a performance benchmark.
 - The suite does not test concurrency, rate limits, or security exploitation.
 - The suite does not retry failed requests; failures are surfaced for investigation.
+- Confirmed vendor defects remain open until the API owner fixes them; this repository documents and reproduces them but cannot patch the sandbox.
+- The defect probe mutates the shared sandbox by design; it uses synthetic data and removes everything it creates.

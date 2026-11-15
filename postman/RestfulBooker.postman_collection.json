@@ -1,6 +1,6 @@
 {
   "info": {
-    "_postman_id": "11d61b0b-7c42-4ddb-882e-f765f5cba545",
+    "_postman_id": "220da140-9423-4c62-9c3d-400ce9f12be4",
     "name": "Restful Booker - QA API Test Suite",
     "description": "Stateful Postman collection for https://restful-booker.herokuapp.com, runnable in Postman or the official Postman CLI.\n\nFlow: POST /auth -> POST /booking -> PUT /booking/:id -> GET /booking/:id -> negative/security checks -> DELETE /booking/:id -> GET /booking/:id (404).\n\nDynamic variables: token and bookingId are extracted from responses and passed to downstream requests. Ephemeral values are cleared from runtime variables during cleanup.\n\nSecurity: no production secrets are stored in the collection; the environment contains only the public Restful Booker demo credentials. HTTPS is enforced for non-local hosts.\n\nRun the full collection in order. The negative and cleanup folders depend on state created by the happy-path folder.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
@@ -296,8 +296,13 @@
                   "  pm.expect(body.bookingid).to.be.above(0);",
                   "});",
                   "",
-                  "pm.test(\"Created booking matches the submitted payload\", function () {",
-                  "  pm.expect(body.booking).to.eql(expected);",
+                  "pm.test(\"Created booking contains every submitted field\", function () {",
+                  "  // Field-by-field comparison of the payload we sent. Extra response fields are",
+                  "  // tolerated so additive API changes do not create false failures.",
+                  "  Object.keys(expected).forEach(function (key) {",
+                  "    pm.expect(body.booking).to.have.property(key);",
+                  "    pm.expect(body.booking[key]).to.eql(expected[key]);",
+                  "  });",
                   "});",
                   "",
                   "pm.test(\"Created booking uses dynamic, run-specific data\", function () {",
@@ -467,8 +472,11 @@
                   "  pm.response.to.have.jsonSchema(schema);",
                   "});",
                   "",
-                  "pm.test(\"Update response exactly matches the update payload\", function () {",
-                  "  pm.expect(body).to.eql(expected);",
+                  "pm.test(\"Update response contains every submitted field\", function () {",
+                  "  Object.keys(expected).forEach(function (key) {",
+                  "    pm.expect(body).to.have.property(key);",
+                  "    pm.expect(body[key]).to.eql(expected[key]);",
+                  "  });",
                   "});",
                   "",
                   "pm.test(\"Updated payload fields are correct\", function () {",
@@ -521,7 +529,7 @@
                 "{{bookingId}}"
               ]
             },
-            "description": "Uses the extracted bookingId and auth token to replace the booking. Asserts the response equals the exact update payload and differs from the original state.",
+            "description": "Uses the extracted bookingId and auth token to replace the booking. Asserts every submitted field is echoed correctly (additive fields tolerated) and that the payload differs from the original state.",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"firstname\": \"{{updateFirstname}}\",\n  \"lastname\": \"{{updateLastname}}\",\n  \"totalprice\": {{updateTotalPrice}},\n  \"depositpaid\": {{updateDepositPaid}},\n  \"bookingdates\": {\n    \"checkin\": \"{{updateCheckin}}\",\n    \"checkout\": \"{{updateCheckout}}\"\n  },\n  \"additionalneeds\": \"{{updateAdditionalNeeds}}\"\n}",
@@ -618,8 +626,11 @@
                   "  pm.response.to.have.jsonSchema(schema);",
                   "});",
                   "",
-                  "pm.test(\"Persisted booking matches the update payload exactly\", function () {",
-                  "  pm.expect(body).to.eql(expected);",
+                  "pm.test(\"Persisted booking contains every updated field\", function () {",
+                  "  Object.keys(expected).forEach(function (key) {",
+                  "    pm.expect(body).to.have.property(key);",
+                  "    pm.expect(body[key]).to.eql(expected[key]);",
+                  "  });",
                   "});",
                   "",
                   "pm.test(\"Updated values survive a fresh GET\", function () {",
@@ -923,6 +934,122 @@
           }
         },
         {
+          "name": "POST /auth - malformed JSON (expect 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 400\", function () {",
+                  "  pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test(\"Content-Type is text/plain\", function () {",
+                  "  pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"text/plain\");",
+                  "});",
+                  "",
+                  "pm.test(\"Response body is Bad Request\", function () {",
+                  "  pm.expect(pm.response.text()).to.eql(\"Bad Request\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/auth",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "auth"
+              ]
+            },
+            "description": "Negative input-parsing test for the auth endpoint. A malformed JSON body must be rejected with 400 Bad Request before credential handling.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"username\":",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
+          "name": "POST /booking - malformed JSON (expect 400)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 400\", function () {",
+                  "  pm.response.to.have.status(400);",
+                  "});",
+                  "",
+                  "pm.test(\"Content-Type is text/plain\", function () {",
+                  "  pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"text/plain\");",
+                  "});",
+                  "",
+                  "pm.test(\"Response body is Bad Request\", function () {",
+                  "  pm.expect(pm.response.text()).to.eql(\"Bad Request\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking"
+              ]
+            },
+            "description": "Negative input-parsing test for the create endpoint. A malformed JSON body must be rejected with 400 Bad Request and must not create a booking.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\"firstname\":",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          }
+        },
+        {
           "name": "GET /booking/:id - unknown id (expect 404)",
           "event": [
             {
@@ -968,7 +1095,63 @@
           }
         },
         {
-          "name": "GET /booking/:id - state unchanged after rejected writes",
+          "name": "DELETE /booking/:id - no token (expect 403)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (!pm.collectionVariables.get(\"bookingId\")) {",
+                  "  throw new Error(\"Missing bookingId. Run Create first.\");",
+                  "}"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test(\"Status code is 403\", function () {",
+                  "  pm.response.to.have.status(403);",
+                  "});",
+                  "",
+                  "pm.test(\"Content-Type is text/plain\", function () {",
+                  "  pm.expect(pm.response.headers.get(\"Content-Type\") || \"\").to.include(\"text/plain\");",
+                  "});",
+                  "",
+                  "pm.test(\"Response body is Forbidden\", function () {",
+                  "  pm.expect(pm.response.text()).to.eql(\"Forbidden\");",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/booking/{{bookingId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "booking",
+                "{{bookingId}}"
+              ]
+            },
+            "description": "Negative authorization test for cleanup. An unauthenticated DELETE must return 403 and must not remove the record; the next GET proves it still exists."
+          }
+        },
+        {
+          "name": "GET /booking/:id - state unchanged after rejected writes/deletes",
           "event": [
             {
               "listen": "prerequest",
@@ -1057,7 +1240,7 @@
                   "  pm.expect(body).to.eql(expected);",
                   "});",
                   "",
-                  "pm.test(\"Rejected updates did not mutate protected data\", function () {",
+                  "pm.test(\"Rejected updates or deletes did not mutate protected data\", function () {",
                   "  pm.expect(body.firstname).to.not.eql(rejectedFirstname);",
                   "  pm.expect(body.totalprice).to.not.eql(999);",
                   "  pm.expect(body.additionalneeds).to.not.eql(\"Unauthorized change\");",
@@ -1085,7 +1268,7 @@
                 "{{bookingId}}"
               ]
             },
-            "description": "Read-after-rejection check: confirms the two unauthorized PUT attempts did not mutate the booking. This closes the gap between a 403 response and actual data integrity."
+            "description": "Read-after-rejection check: confirms the unauthorized PUT and DELETE attempts did not mutate or remove the booking. This closes the gap between a 403 response and actual data integrity."
           }
         }
       ]

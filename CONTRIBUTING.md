@@ -11,7 +11,7 @@
 
 - Keep the collection runnable in order from start to finish.
 - Preserve dynamic chaining: do not hard-code a token or booking id.
-- Add assertions at the right layer: status, content type, schema, exact payload, and state where relevant.
+- Add assertions at the right layer: status, content type, schema, submitted-field equality, and state where relevant.
 - Keep negative tests isolated from the happy-path record's expected values; use a sentinel payload.
 - Update `docs/TEST_PLAN.md` when scenarios, assertions, or API behavior change.
 - Do not commit `.env` files, real credentials, raw Postman execution reports, `node_modules`, or generated summaries.

@@ -11,9 +11,9 @@ The suite covers a full auth → create → update → verify → delete workflo
 | Area | Implementation |
 | --- | --- |
 | Dynamic chaining | Extracts `token` from `POST /auth` and `bookingid` from `POST /booking`, then uses both in downstream requests. |
-| Robust assertions | Status codes, content types, JSON Schema, exact payload matching, state-change checks, and response-time guard. |
-| Negative testing | `PUT` without a token and with an invalid token; invalid credentials; unknown resource. |
-| State integrity | A read-after-rejection check proves the two unauthorized writes did not mutate the booking. |
+| Robust assertions | Status codes, content types, JSON Schema, field-by-field payload matching, state-change checks, and response-time guard. |
+| Negative testing | Unauthorized `PUT`/`DELETE`, invalid credentials, malformed JSON, and unknown resources. |
+| State integrity | A read-after-rejection check proves unauthorized writes and deletes did not mutate the booking. |
 | Cleanup | Deletes the created booking, confirms `404`, and clears runtime token/test data. |
 | Security hygiene | No committed secrets, HTTPS enforcement, ephemeral token handling, sanitized CI reports, secret scan, and clean `npm audit`. |
 | CI | GitHub Actions runs the collection, secret scan, dependency audit, and uploads only a sanitized run summary. |
@@ -22,10 +22,12 @@ The suite covers a full auth → create → update → verify → delete workflo
 
 - **Chained flow:** auth → create → update → verify → delete, executed in one ordered collection.
 - **Dynamic variable chaining:** `token` and `bookingid` are extracted from responses and injected into downstream URLs/headers.
-- **Robust assertions:** status codes, content types, JSON Schema, exact payload equality, specific business fields, and persisted-state checks.
-- **Negative testing:** `PUT` without a token and with an invalid token, invalid credentials, unknown resource, and a read-after-rejection integrity check.
+- **Robust assertions:** status codes, content types, JSON Schema, field-by-field payload equality, specific business fields, and persisted-state checks.
+- **Negative testing:** `PUT` without a token and with an invalid token, unauthenticated `DELETE`, invalid credentials, malformed JSON, unknown resource, and a read-after-rejection integrity check.
 - **Cleanup:** the created booking is deleted and a follow-up `GET` confirms `404`.
-- **Deliverable:** exported Postman v2.1 collection plus environment, test plan, security policy, and CI configuration.
+- **Per-endpoint reporting:** request details, response details, analysis, and negative scenarios in [docs/API_TEST_REPORT.md](docs/API_TEST_REPORT.md).
+- **Bug reports:** seven reproducible defects with steps, expected vs actual results, impact, and HTTP evidence in [docs/BUG_REPORTS.md](docs/BUG_REPORTS.md).
+- **Deliverable:** exported Postman v2.1 collection plus environment, test plan, API test report, bug reports, security policy, and CI configuration.
 
 ## Test flow
 
@@ -33,18 +35,21 @@ The suite covers a full auth → create → update → verify → delete workflo
 | --- | --- | --- | --- |
 | 0 | `GET /ping` | — | `201`, `text/plain`, body `Created` |
 | 1 | `POST /auth` | stores `token` | `200`, JSON Schema, token present/non-empty |
-| 2 | `POST /booking` | stores `bookingId` | `200`, create schema, positive integer id, exact payload match |
+| 2 | `POST /booking` | stores `bookingId` | `200`, create schema, positive integer id, submitted fields echoed |
 | 3 | `PUT /booking/:id` | uses `token` + `bookingId` | `200`, booking schema, exact updated payload, changed from original |
 | 4 | `GET /booking/:id` | uses `bookingId` | `200`, updated data persisted on an independent read |
 | 5 | `PUT /booking/:id` without token | uses `bookingId` | `403`, `Forbidden`, no mutation |
 | 6 | `PUT /booking/:id` with invalid token | uses `bookingId` | `403`, `Forbidden` |
 | 7 | `POST /auth` with bad password | — | `200` + `reason: Bad credentials`, no token issued |
-| 8 | `GET /booking/999999999` | — | `404`, `Not Found` |
-| 9 | `GET /booking/:id` after rejected writes | uses `bookingId` | Booking still equals the last authorized update |
-| 10 | `DELETE /booking/:id` | uses `token` + `bookingId` | `201`, body `Created` |
-| 11 | `GET /booking/:id` after delete | uses `bookingId` | `404`, then clears ephemeral variables |
+| 8 | `POST /auth` with malformed JSON | — | `400`, `Bad Request` |
+| 9 | `POST /booking` with malformed JSON | — | `400`, `Bad Request` |
+| 10 | `GET /booking/999999999` | — | `404`, `Not Found` |
+| 11 | `DELETE /booking/:id` without token | uses `bookingId` | `403`, `Forbidden`, record still exists |
+| 12 | `GET /booking/:id` after rejected writes/deletes | uses `bookingId` | Booking still equals the last authorized update |
+| 13 | `DELETE /booking/:id` | uses `token` + `bookingId` | `201`, body `Created` |
+| 14 | `GET /booking/:id` after delete | uses `bookingId` | `404`, then clears ephemeral variables |
 
-The collection executes **12 requests and 65 assertions**.
+The collection executes **15 requests and 77 assertions** (15 collection-level liveness checks plus 62 request-level checks).
 
 ## Repository layout
 
@@ -54,13 +59,18 @@ The collection executes **12 requests and 65 assertions**.
 │   ├── dependabot.yml
 │   └── workflows/api-tests.yml
 ├── docs/
-│   └── TEST_PLAN.md
+│   ├── API_TEST_REPORT.md
+│   ├── BUG_REPORTS.md
+│   ├── TEST_PLAN.md
+│   └── evidence/
+│       └── defect-probe.log
 ├── postman/
 │   ├── RestfulBooker.postman_collection.json
 │   └── RestfulBooker.postman_environment.json
 ├── reports/
 │   └── .gitkeep
 ├── scripts/
+│   ├── probe-defects.mjs
 │   ├── redact-reports.mjs
 │   └── secret-scan.mjs
 ├── .editorconfig
@@ -93,6 +103,14 @@ Run just the stateless health check:
 ```bash
 npm run test:smoke
 ```
+
+Reproduce the documented API defects without touching the regression suite:
+
+```bash
+npm run probe:defects
+```
+
+The probe creates its own bookings, deletes them afterwards, and never prints auth tokens. Its sanitized transcript is checked in at `docs/evidence/defect-probe.log`.
 
 The run summary is written to `reports/*.collection-run-summary.yaml`.
 
@@ -130,22 +148,26 @@ The suite intentionally combines several layers rather than relying on status co
 
 1. **Transport/status** — expected HTTP status and content type.
 2. **Contract** — JSON Schema for auth, booking, create-booking, and bad-credentials responses.
-3. **Exact payload** — deep equality against the dynamic payload the test sent.
+3. **Payload equality** — every field the test sent is compared against the response value; additive response fields are tolerated.
 4. **Specific business data** — updated firstname, price, deposit flag, dates, and additional needs.
 5. **State transition** — update differs from the original, and a fresh `GET` returns the updated record.
 6. **Authorization integrity** — rejected writes return `403` and leave the record unchanged.
 7. **Cleanup** — `DELETE` succeeds and a subsequent `GET` returns `404`.
 8. **Liveness** — each response must complete within a generous 30-second guard; this is not a performance SLO.
 
-JSON Schemas require the critical fields and types but allow additive fields (`additionalProperties: true`). This keeps the contract meaningful without failing on benign, additive API changes.
+JSON Schemas require the critical fields and types but allow additive fields (`additionalProperties: true`). Payload assertions follow the same philosophy: they verify every submitted field and tolerate extra response fields. This keeps the suite meaningful without failing on benign, additive API changes.
 
 ## Negative and security coverage
 
 - `PUT /booking/:id` with **no auth cookie** → `403 Forbidden`.
 - `PUT /booking/:id` with an **invalid token** → `403 Forbidden`.
-- Both unauthorized requests use a **sentinel payload**; the follow-up `GET` proves the sentinel was never persisted.
+- `DELETE /booking/:id` with **no auth cookie** → `403 Forbidden`; the record still exists afterwards.
+- Both unauthorized writes use a **sentinel payload**; the follow-up `GET` proves the sentinel was never persisted.
 - `POST /auth` with a wrong password → documents Restful Booker's `200` + `reason` behavior and asserts that **no token** is returned.
+- `POST /auth` and `POST /booking` with **malformed JSON** → `400 Bad Request`.
 - `GET /booking/:id` for an unknown id → `404 Not Found`.
+
+Additional invalid-input cases that reveal real defects (missing fields, wrong types, negative prices, invalid dates, repeated deletes) are reproduced by `npm run probe:defects` and documented in [docs/BUG_REPORTS.md](docs/BUG_REPORTS.md) rather than asserted as passing behavior.
 
 ## Security practices
 
@@ -175,11 +197,18 @@ It installs from the lockfile, runs the secret scan, audits dependencies, execut
 - **Live shared API.** Restful Booker is stateful and shared. The suite uses a unique suffix and dynamic dates to avoid collisions, but it cannot control other users' data.
 - **Best-effort cleanup.** If the API is unavailable during `DELETE`, the record may remain. The unique payload makes it identifiable without affecting other tests.
 - **Documented API quirks.** `GET /ping` returns `201 Created`; bad credentials return `200` with a reason; `DELETE` returns `201 Created`. Assertions follow observed behavior and are explained in the collection descriptions and test plan.
-- **Forward-compatible schemas.** Additive response fields are allowed; required fields, types, and date formats are still validated.
+- **Forward-compatible contract.** Additive response fields are allowed by both the schemas and the payload comparisons; required fields, types, and date formats are still validated.
+- **Known defects are documented, not hidden.** The regression suite stays green by asserting documented behavior and valid negative cases. Confirmed vendor defects are reproduced separately and tracked in [docs/BUG_REPORTS.md](docs/BUG_REPORTS.md).
 - **Functional scope only.** This is not a load, stress, penetration, or UI test suite.
 - **No retries.** Transient failures surface in CI rather than being hidden. The 30-second request timeout is a liveness guard, not a performance target.
 
-See [docs/TEST_PLAN.md](docs/TEST_PLAN.md) for scope, risks, scenarios, traceability, entry/exit criteria, and reporting details.
+## Documentation
+
+- [docs/TEST_PLAN.md](docs/TEST_PLAN.md) — scope, risks, scenarios, traceability, entry/exit criteria, and reporting.
+- [docs/API_TEST_REPORT.md](docs/API_TEST_REPORT.md) — per-endpoint request/response details, analysis, and negative scenarios.
+- [docs/BUG_REPORTS.md](docs/BUG_REPORTS.md) — formal defect reports with reproduction steps, expected vs actual results, and evidence.
+- [docs/evidence/defect-probe.log](docs/evidence/defect-probe.log) — sanitized HTTP transcript from the defect probe.
+- [SECURITY.md](SECURITY.md) — security policy and responsible disclosure.
 
 ## License
 

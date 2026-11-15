@@ -1,0 +1,108 @@
+﻿Restful Booker defect probe
+Target: https://restful-booker.herokuapp.com
+Started: 2026-11-15T02:22:58.895Z
+Note: auth tokens are intentionally not printed.
+
+=== Authentication ===
+[valid credentials] status=200, tokenIssued=true
+
+[missing credentials body]
+Status: 200
+Content-Type: application/json; charset=utf-8
+Body: {"reason":"Bad credentials"}
+
+[malformed JSON body]
+Status: 400
+Content-Type: text/plain; charset=utf-8
+Body: Bad Request
+
+=== Create booking: baseline ===
+
+[valid payload]
+Status: 200
+Content-Type: application/json; charset=utf-8
+Body: {"bookingid":1151,"booking":{"firstname":"QA_Defect_Probe","lastname":"Automation","totalprice":150,"depositpaid":true,"bookingdates":{"checkin":"2026-12-01","checkout":"2026-12-05"},"additionalneeds":"Breakfast"}}
+Baseline booking id: 1151
+
+=== Create booking: invalid payloads ===
+
+[empty object]
+Status: 500
+Content-Type: text/plain; charset=utf-8
+Body: Internal Server Error
+
+[missing firstname]
+Status: 500
+Content-Type: text/plain; charset=utf-8
+Body: Internal Server Error
+
+[string totalprice]
+Status: 200
+Content-Type: application/json; charset=utf-8
+Body: {"bookingid":1159,"booking":{"firstname":"QA_Defect_Probe","lastname":"Automation","totalprice":null,"depositpaid":true,"bookingdates":{"checkin":"2026-12-01","checkout":"2026-12-05"},"additionalneeds":"Breakfast"}}
+Cleanup for created booking 1159: 201 Created
+
+[negative totalprice]
+Status: 200
+Content-Type: application/json; charset=utf-8
+Body: {"bookingid":1167,"booking":{"firstname":"QA_Defect_Probe","lastname":"Automation","totalprice":-100,"depositpaid":true,"bookingdates":{"checkin":"2026-12-01","checkout":"2026-12-05"},"additionalneeds":"Breakfast"}}
+Cleanup for created booking 1167: 201 Created
+
+[invalid date strings]
+Status: 200
+Content-Type: application/json; charset=utf-8
+Body: {"bookingid":1173,"booking":{"firstname":"QA_Defect_Probe","lastname":"Automation","totalprice":150,"depositpaid":true,"bookingdates":{"checkin":"0NaN-aN-aN","checkout":"0NaN-aN-aN"},"additionalneeds":"Breakfast"}}
+Cleanup for created booking 1173: 201 Created
+
+[null required fields]
+Status: 500
+Content-Type: text/plain; charset=utf-8
+Body: Internal Server Error
+
+=== Update booking: payload validation ===
+
+[empty object with valid token]
+Status: 400
+Content-Type: text/plain; charset=utf-8
+Body: Bad Request
+
+[partial payload with valid token]
+Status: 400
+Content-Type: text/plain; charset=utf-8
+Body: Bad Request
+
+[booking after rejected updates]
+Status: 200
+Content-Type: application/json; charset=utf-8
+Body: {"firstname":"QA_Defect_Probe","lastname":"Automation","totalprice":150,"depositpaid":true,"bookingdates":{"checkin":"2026-12-01","checkout":"2026-12-05"},"additionalneeds":"Breakfast"}
+
+=== Delete booking: negative cases ===
+
+[unknown id with valid token]
+Status: 405
+Content-Type: text/plain; charset=utf-8
+Body: Method Not Allowed
+
+[existing id without token]
+Status: 403
+Content-Type: text/plain; charset=utf-8
+Body: Forbidden
+
+[existing id with valid token]
+Status: 201
+Content-Type: text/plain; charset=utf-8
+Body: Created
+
+[same id deleted again with valid token]
+Status: 405
+Content-Type: text/plain; charset=utf-8
+Body: Method Not Allowed
+
+[GET after successful delete]
+Status: 404
+Content-Type: text/plain; charset=utf-8
+Body: Not Found
+
+=== Cleanup ===
+No extra created bookings remain.
+Probe complete. Check the bug reports in docs/BUG_REPORTS.md for analysis.
