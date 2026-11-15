@@ -27,7 +27,7 @@ The suite covers a full auth → create → update → verify → delete workflo
 - **Cleanup:** the created booking is deleted and a follow-up `GET` confirms `404`.
 - **Per-endpoint reporting:** request details, response details, analysis, and negative scenarios in [docs/API_TEST_REPORT.md](docs/API_TEST_REPORT.md).
 - **Bug reports:** seven reproducible defects with steps, expected vs actual results, impact, and HTTP evidence in [docs/BUG_REPORTS.md](docs/BUG_REPORTS.md).
-- **Deliverable:** exported Postman v2.1 collection plus environment, test plan, API test report, bug reports, security policy, and CI configuration.
+- **Deliverable:** exported Postman v2.1 collection plus environment, API test report, bug reports, security policy, and CI configuration.
 
 ## Test flow
 
@@ -61,7 +61,6 @@ The collection executes **15 requests and 77 assertions** (15 collection-level l
 ├── docs/
 │   ├── API_TEST_REPORT.md
 │   ├── BUG_REPORTS.md
-│   ├── TEST_PLAN.md
 │   └── evidence/
 │       └── defect-probe.log
 ├── postman/
@@ -196,7 +195,7 @@ It installs from the lockfile, runs the secret scan, audits dependencies, execut
 
 - **Live shared API.** Restful Booker is stateful and shared. The suite uses a unique suffix and dynamic dates to avoid collisions, but it cannot control other users' data.
 - **Best-effort cleanup.** If the API is unavailable during `DELETE`, the record may remain. The unique payload makes it identifiable without affecting other tests.
-- **Documented API quirks.** `GET /ping` returns `201 Created`; bad credentials return `200` with a reason; `DELETE` returns `201 Created`. Assertions follow observed behavior and are explained in the collection descriptions and test plan.
+- **Documented API quirks.** `GET /ping` returns `201 Created`; bad credentials return `200` with a reason; `DELETE` returns `201 Created`. Assertions follow the observed behavior and are explained in the collection descriptions.
 - **Forward-compatible contract.** Additive response fields are allowed by both the schemas and the payload comparisons; required fields, types, and date formats are still validated.
 - **Known defects are documented, not hidden.** The regression suite stays green by asserting documented behavior and valid negative cases. Confirmed vendor defects are reproduced separately and tracked in [docs/BUG_REPORTS.md](docs/BUG_REPORTS.md).
 - **Functional scope only.** This is not a load, stress, penetration, or UI test suite.
@@ -204,8 +203,6 @@ It installs from the lockfile, runs the secret scan, audits dependencies, execut
 
 ## Documentation
 
-- [docs/TEST_PLAN.md](docs/TEST_PLAN.md) — scope, risks, scenarios, traceability, entry/exit criteria, and reporting.
-- [docs/QA_ASSESSMENT_TEST_DOCUMENT.md](docs/QA_ASSESSMENT_TEST_DOCUMENT.md) / [.docx](docs/QA_Assessment_Test_Document.docx) — complete assessment document with test strategy, web test cases, API test cases, evidence, and bug reports.
 - [docs/API_TEST_REPORT.md](docs/API_TEST_REPORT.md) — per-endpoint request/response details, analysis, and negative scenarios.
 - [docs/BUG_REPORTS.md](docs/BUG_REPORTS.md) — formal defect reports with reproduction steps, expected vs actual results, and evidence.
 - [docs/evidence/defect-probe.log](docs/evidence/defect-probe.log) — sanitized HTTP transcript from the defect probe.
