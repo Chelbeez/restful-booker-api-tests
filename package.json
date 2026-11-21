@@ -17,6 +17,6 @@
     "verify": "npm run security:scan && npm test"
   },
   "devDependencies": {
-    "postman-cli": "1.90.0"
+    "postman-cli": "1.91.0"
   }
 }
